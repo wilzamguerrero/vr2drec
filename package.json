@@ -1,0 +1,12 @@
+{
+  "name": "vr2drec",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Reproductor web de vídeo local y remoto con soporte 360/VR y grabación de la vista plana reencuadrada, todo en el navegador.",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js && node --check src/app.js"
+  },
+  "license": "MIT"
+}

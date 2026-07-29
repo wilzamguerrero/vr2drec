@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>vr2drec · Reproductor VR/360 con grabación plana</title>
+<meta name="description" content="Reproductor web de vídeo local y remoto con soporte 360/VR, reencuadre en tiempo real y grabación de la vista plana. Todo en el navegador." />
+<link rel="stylesheet" href="./styles/main.css" />
+</head>
+<body>
+<a class="skip-link" href="#stage">Saltar al reproductor</a>
+
+<header class="topbar">
+  <h1 class="brand"><span aria-hidden="true">◎</span> vr2drec</h1>
+
+  <nav class="toolbar" aria-label="Paneles y herramientas">
+    <button type="button" class="tbtn" data-win="win-source" aria-pressed="false">Fuente</button>
+    <button type="button" class="tbtn" data-win="win-proj" aria-pressed="false">Proyección</button>
+    <button type="button" class="tbtn" data-win="win-reframe" aria-pressed="false">Reencuadre</button>
+    <button type="button" class="tbtn" data-win="win-rec" aria-pressed="false">Grabar</button>
+    <span class="tsep" aria-hidden="true"></span>
+    <button type="button" class="tbtn" id="btnCropMode" aria-pressed="false">Recortar salida</button>
+    <button type="button" class="tbtn" id="btnXR" hidden>Gafas VR</button>
+    <button type="button" class="tbtn" id="btnFull">Pantalla completa</button>
+    <button type="button" class="tbtn" data-win="win-help" aria-pressed="false">Ayuda</button>
+  </nav>
+
+  <div class="topbar-end">
+    <span class="chip" id="chipFormat" title="Formato de salida">1920×1080</span>
+  </div>
+</header>
+
+<main class="viewer">
+  <div id="stage" class="stage" tabindex="-1">
+    <div id="frame" class="frame">
+      <canvas id="gl" width="1920" height="1080" role="img"
+              aria-label="Vista reproyectada del vídeo. Arrastra para rotar la cámara."></canvas>
+
+      <div id="cropOverlay" class="crop" hidden>
+        <div id="cropBox" class="crop-box" tabindex="0" role="group" aria-label="Área de salida. Arrastra para mover, usa las esquinas para redimensionar.">
+          <span class="crop-third v1" aria-hidden="true"></span>
+          <span class="crop-third v2" aria-hidden="true"></span>
+          <span class="crop-third h1" aria-hidden="true"></span>
+          <span class="crop-third h2" aria-hidden="true"></span>
+          <span class="crop-size" id="cropSize" aria-hidden="true"></span>
+          <span class="hnd" data-h="nw"></span><span class="hnd" data-h="n"></span><span class="hnd" data-h="ne"></span>
+          <span class="hnd" data-h="w"></span><span class="hnd" data-h="e"></span>
+          <span class="hnd" data-h="sw"></span><span class="hnd" data-h="s"></span><span class="hnd" data-h="se"></span>
+        </div>
+      </div>
+
+      <div id="recBadge" class="rec-badge" hidden><span class="dot" aria-hidden="true"></span><span id="recBadgeText">REC</span></div>
+      <div id="hud" class="hud" aria-hidden="true"></div>
+    </div>
+
+    <p id="emptyState" class="empty">
+      <span class="empty-title">Sin vídeo</span>
+      <label class="btn btn-primary" for="fileInput">Abrir archivos</label>
+    </p>
+
+    <div id="dropHint" class="drop-hint" hidden><span>Suelta el vídeo</span></div>
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  </div>
+
+  <div id="cropBar" class="cropbar" hidden>
+    <strong>Recorte de salida</strong>
+    <label class="inline">
+      <span>Proporción</span>
+      <select id="selCropAspect" class="sel-sm">
+        <option value="free" selected>Libre</option>
+        <option value="1.7777777778">16:9</option>
+        <option value="0.5625">9:16</option>
+        <option value="1">1:1</option>
+        <option value="0.8">4:5</option>
+        <option value="1.3333333333">4:3</option>
+        <option value="2.3902439024">2.39:1</option>
+      </select>
+    </label>
+    <label class="inline chk"><input type="checkbox" id="chkCropCam" checked /> <span>Reencuadrar cámara</span></label>
+    <output id="outCropInfo" class="chip">—</output>
+    <button type="button" id="btnCropApply" class="btn btn-primary">Aplicar</button>
+    <button type="button" id="btnCropFull" class="btn btn-ghost">Marco completo</button>
+    <button type="button" id="btnCropClose" class="btn">Cerrar</button>
+  </div>
+
+  <div class="playerbar">
+    <button type="button" id="btnPlay" class="btn btn-icon" aria-label="Reproducir">▶</button>
+    <span id="timeCur" class="time">0:00</span>
+    <input type="range" id="seek" class="seek" min="0" max="1000" value="0" step="1" aria-label="Posición de reproducción" />
+    <span id="timeDur" class="time">0:00</span>
+
+    <button type="button" id="btnMute" class="btn btn-icon" aria-label="Silenciar">🔊</button>
+    <input type="range" id="rngVol" class="mini" min="0" max="1" step="0.01" value="1" aria-label="Volumen" />
+
+    <select id="selSpeed" class="sel-sm" aria-label="Velocidad de reproducción">
+      <option value="0.25">0.25×</option>
+      <option value="0.5">0.5×</option>
+      <option value="1" selected>1×</option>
+      <option value="1.5">1.5×</option>
+      <option value="2">2×</option>
+    </select>
+
+    <label class="inline chk"><input type="checkbox" id="chkLoop" /> <span>Bucle</span></label>
+
+    <button type="button" id="btnSnapshot" class="btn">Captura PNG</button>
+    <button type="button" id="btnRec" class="btn btn-rec">Grabar vista</button>
+  </div>
+</main>
+
+<!-- ------------------------------ ventanas flotantes ------------------------------ -->
+<div id="windows" class="windows">
+
+  <section class="win" id="win-source" data-x="24" data-y="86" hidden aria-labelledby="win-source-title">
+    <header class="win-bar">
+      <h2 id="win-source-title">Fuente</h2>
+      <button type="button" class="win-close" data-close="win-source" aria-label="Cerrar Fuente">✕</button>
+    </header>
+    <div class="win-body">
+      <div class="row">
+        <label class="btn btn-primary file-label" for="fileInput">Abrir archivos</label>
+        <input type="file" id="fileInput" accept="video/*,.insv,.insp,.mkv,.mov" multiple hidden />
+      </div>
+      <p class="hint">Se abre en local con <code>URL.createObjectURL</code>. El archivo nunca sale de tu equipo.</p>
+
+      <div class="field">
+        <label for="urlInput">URL directa de vídeo</label>
+        <div class="row">
+          <input type="url" id="urlInput" placeholder="https://ejemplo.com/video360.mp4" />
+          <button type="button" id="btnAddUrl" class="btn">Cargar</button>
+        </div>
+        <p class="hint">Si el servidor remoto no manda <code>Access-Control-Allow-Origin</code>, vr2drec lo reintenta solo a través del proxy del servidor local.</p>
+        <p class="hint" id="urlStatus" role="status" aria-live="polite"></p>
+        <button type="button" id="btnUseProxy" class="btn" hidden>Reintentar con el proxy local</button>
+      </div>
+
+      <h3>Lista de reproducción</h3>
+      <ul id="playlist" class="playlist" aria-label="Lista de reproducción"></ul>
+
+      <dl class="meta">
+        <div><dt>Resolución</dt><dd id="infoRes">—</dd></div>
+        <div><dt>Relación</dt><dd id="infoAspect">—</dd></div>
+        <div><dt>Duración</dt><dd id="infoDur">—</dd></div>
+        <div><dt>Proyección</dt><dd id="infoProj">—</dd></div>
+        <div><dt>Fotogramas a GPU</dt><dd id="infoFrames">—</dd></div>
+        <div><dt>Textura máx. GPU</dt><dd id="infoTex">—</dd></div>
+        <div><dt>Búfer descargado</dt><dd id="infoBuf">—</dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <section class="win" id="win-proj" data-x="24" data-y="86" hidden aria-labelledby="win-proj-title">
+    <header class="win-bar">
+      <h2 id="win-proj-title">Proyección</h2>
+      <button type="button" class="win-close" data-close="win-proj" aria-label="Cerrar Proyección">✕</button>
+    </header>
+    <div class="win-body">
+      <h3>Entrada</h3>
+      <label class="switch"><input type="checkbox" id="chkVR" /> <span>Modo 360 / VR (rotar cámara)</span></label>
+
+      <div class="field">
+        <label for="selInput">Formato del vídeo original</label>
+        <select id="selInput">
+          <option value="auto" selected>Detección automática</option>
+          <option value="flat">Plano (2D normal)</option>
+          <option value="equirect360">Equirectangular 360° (2:1)</option>
+          <option value="equirect180">Equirectangular 180° (VR180)</option>
+          <option value="fisheye_dual">Doble ojo de pez (Insta360)</option>
+          <option value="fisheye_single">Ojo de pez único (180°)</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="selLayout">Disposición estéreo del original</label>
+        <select id="selLayout">
+          <option value="mono" selected>Monoscópico</option>
+          <option value="tb">Arriba / abajo</option>
+          <option value="sbs">Lado a lado</option>
+        </select>
+      </div>
+
+      <div class="field" id="fldFish" hidden>
+        <label for="rngFishFov">Cobertura de la lente: <output id="outFishFov">190°</output></label>
+        <input type="range" id="rngFishFov" min="120" max="230" step="1" value="190" />
+        <label for="rngFishScale">Escala del círculo: <output id="outFishScale">1.000</output></label>
+        <input type="range" id="rngFishScale" min="0.80" max="1.20" step="0.005" value="1" />
+        <label for="rngFishBlend">Mezcla de costura: <output id="outFishBlend">6°</output></label>
+        <input type="range" id="rngFishBlend" min="0" max="20" step="0.5" value="6" />
+      </div>
+
+      <h3>Salida</h3>
+      <div class="field">
+        <label for="selOut">Proyección de salida</label>
+        <select id="selOut">
+          <option value="rect" selected>Rectilínea (plano natural)</option>
+          <option value="stereo">Estereográfica (ojo de pez suave)</option>
+          <option value="planet">Little planet</option>
+          <option value="equirect">Equirectangular (360 completo)</option>
+        </select>
+      </div>
+
+      <div class="field" id="fldFov">
+        <label for="rngFov">Campo de visión: <output id="outFov">90°</output></label>
+        <input type="range" id="rngFov" min="10" max="170" step="1" value="90" />
+      </div>
+
+      <div class="grid2">
+        <div class="field"><label for="numYaw">Yaw</label><input type="number" id="numYaw" step="1" value="0" /></div>
+        <div class="field"><label for="numPitch">Pitch</label><input type="number" id="numPitch" step="1" value="0" /></div>
+        <div class="field"><label for="numRoll">Roll</label><input type="number" id="numRoll" step="1" value="0" /></div>
+        <div class="field"><label for="rngSens">Sensibilidad</label><input type="range" id="rngSens" min="0.2" max="3" step="0.05" value="1" /></div>
+      </div>
+
+      <div class="row wrap">
+        <button type="button" id="btnResetView" class="btn">Recentrar vista</button>
+        <button type="button" id="btnLevel" class="btn btn-ghost">Nivelar horizonte</button>
+      </div>
+
+      <label class="switch"><input type="checkbox" id="chkStereoView" /> <span>Vista estéreo lado a lado</span></label>
+      <label class="switch"><input type="checkbox" id="chkGyro" /> <span>Controlar con el giroscopio</span></label>
+      <label class="switch"><input type="checkbox" id="chkInertia" checked /> <span>Inercia al arrastrar</span></label>
+    </div>
+  </section>
+
+  <section class="win" id="win-reframe" data-x="24" data-y="86" hidden aria-labelledby="win-reframe-title">
+    <header class="win-bar">
+      <h2 id="win-reframe-title">Reencuadre</h2>
+      <button type="button" class="win-close" data-close="win-reframe" aria-label="Cerrar Reencuadre">✕</button>
+    </header>
+    <div class="win-body">
+      <p class="hint">Puntos clave de cámara en la línea de tiempo; vr2drec interpola el movimiento y lo aplica al grabar.</p>
+      <label class="switch"><input type="checkbox" id="chkFollow" /> <span>Seguir keyframes al reproducir</span></label>
+      <div class="row wrap">
+        <button type="button" id="btnAddKf" class="btn btn-primary">Añadir keyframe aquí</button>
+        <button type="button" id="btnClearKf" class="btn btn-ghost">Borrar todos</button>
+      </div>
+      <div class="field">
+        <label for="selEase">Suavizado</label>
+        <select id="selEase">
+          <option value="smooth" selected>Suave (Catmull-Rom)</option>
+          <option value="linear">Lineal</option>
+          <option value="hold">Escalonado</option>
+        </select>
+      </div>
+      <ol id="kfList" class="kflist" aria-label="Keyframes"></ol>
+    </div>
+  </section>
+
+  <section class="win" id="win-rec" data-x="24" data-y="86" hidden aria-labelledby="win-rec-title">
+    <header class="win-bar">
+      <h2 id="win-rec-title">Grabar</h2>
+      <button type="button" class="win-close" data-close="win-rec" aria-label="Cerrar Grabar">✕</button>
+    </header>
+    <div class="win-body">
+      <h3>Formato de salida</h3>
+      <div class="field">
+        <label for="selRes">Tamaño</label>
+        <select id="selRes">
+          <option value="3840x2160">3840 × 2160 · 16:9 4K</option>
+          <option value="2560x1440">2560 × 1440 · 16:9</option>
+          <option value="1920x1080" selected>1920 × 1080 · 16:9</option>
+          <option value="1280x720">1280 × 720 · 16:9</option>
+          <option value="1080x1920">1080 × 1920 · 9:16</option>
+          <option value="720x1280">720 × 1280 · 9:16</option>
+          <option value="1080x1080">1080 × 1080 · 1:1</option>
+          <option value="1440x1080">1440 × 1080 · 4:3</option>
+          <option value="2048x1024">2048 × 1024 · 2:1</option>
+          <option value="custom">Personalizado / recorte</option>
+        </select>
+      </div>
+      <div class="grid2">
+        <div class="field"><label for="numW">Ancho</label><input type="number" id="numW" min="64" max="7680" step="2" value="1920" /></div>
+        <div class="field"><label for="numH">Alto</label><input type="number" id="numH" min="64" max="7680" step="2" value="1080" /></div>
+      </div>
+      <p class="hint">O pulsa <strong>Recortar salida</strong> en la barra superior y ajusta el marco sobre la propia imagen.</p>
+
+      <div class="grid2">
+        <div class="field">
+          <label for="selFps">Fotogramas/s</label>
+          <select id="selFps">
+            <option value="24">24</option>
+            <option value="25">25</option>
+            <option value="30" selected>30</option>
+            <option value="50">50</option>
+            <option value="60">60</option>
+          </select>
+        </div>
+        <div class="field"><label for="numBitrate">Bitrate (Mbps)</label><input type="number" id="numBitrate" min="1" max="120" step="1" value="16" /></div>
+      </div>
+
+      <div class="field">
+        <label for="selCodec">Contenedor / códec</label>
+        <select id="selCodec"></select>
+      </div>
+
+      <label class="switch"><input type="checkbox" id="chkAudio" checked /> <span>Incluir audio del vídeo</span></label>
+
+      <h3>Tramo a exportar</h3>
+      <div class="grid2">
+        <div class="field"><label for="numIn">Entrada (s)</label><input type="number" id="numIn" min="0" step="0.1" value="0" /></div>
+        <div class="field"><label for="numOut">Salida (s)</label><input type="number" id="numOut" min="0" step="0.1" value="0" /></div>
+      </div>
+      <div class="row wrap">
+        <button type="button" id="btnSetIn" class="btn btn-ghost">Marcar entrada</button>
+        <button type="button" id="btnSetOut" class="btn btn-ghost">Marcar salida</button>
+      </div>
+      <div class="row wrap">
+        <button type="button" id="btnRec2" class="btn btn-rec">Grabar en directo</button>
+        <button type="button" id="btnExportRange" class="btn btn-primary">Exportar tramo</button>
+      </div>
+      <p class="hint" id="recStatus" role="status" aria-live="polite">Listo.</p>
+
+      <h3>Resultados</h3>
+      <ul id="results" class="results" aria-label="Grabaciones"></ul>
+    </div>
+  </section>
+
+  <section class="win win-wide" id="win-help" data-x="24" data-y="86" hidden aria-labelledby="win-help-title">
+    <header class="win-bar">
+      <h2 id="win-help-title">Ayuda</h2>
+      <button type="button" class="win-close" data-close="win-help" aria-label="Cerrar Ayuda">✕</button>
+    </header>
+    <div class="win-body">
+      <ol class="hint-list">
+        <li>Abre un archivo con <strong>Fuente → Abrir archivos</strong> o arrástralo sobre el reproductor. El vídeo <strong>no se sube a ningún sitio</strong>.</li>
+        <li>También puedes pegar una <strong>URL directa</strong> (el servidor remoto debe permitir CORS).</li>
+        <li>Con <strong>Modo 360/VR</strong> activo, arrastra sobre la imagen para rotar la cámara y usa la rueda para el zoom.</li>
+        <li><strong>Recortar salida</strong> te deja dibujar el marco final sobre la imagen: define proporción, resolución y encuadre de una vez.</li>
+        <li><strong>Grabar vista</strong> guarda exactamente lo que ves, ya reproyectado a plano.</li>
+      </ol>
+      <h3>Atajos</h3>
+      <ul class="shortcuts">
+        <li><kbd>Espacio</kbd> reproducir / pausar</li>
+        <li><kbd>←</kbd> <kbd>→</kbd> saltar 5 s (con <kbd>Shift</kbd>: 1 s)</li>
+        <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> rotar · <kbd>Q</kbd><kbd>E</kbd> horizonte</li>
+        <li><kbd>+</kbd> <kbd>−</kbd> zoom · <kbd>0</kbd> recentrar</li>
+        <li><kbd>K</kbd> keyframe · <kbd>R</kbd> grabar · <kbd>C</kbd> recortar</li>
+        <li><kbd>F</kbd> pantalla completa · <kbd>M</kbd> silenciar · <kbd>Esc</kbd> cerrar ventana</li>
+      </ul>
+    </div>
+  </section>
+</div>
+
+<video id="video" playsinline crossorigin="anonymous" class="sr-only" aria-hidden="true"></video>
+
+<script type="module" src="./src/app.js"></script>
+</body>
+</html>
